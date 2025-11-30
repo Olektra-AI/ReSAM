@@ -1,8 +1,8 @@
-<div align="center">
+<!-- <div align="center">
     
 # PointSAM: Pointly-Supervised Segment Anything Model for Remote Sensing Images
 <p align="center">
-    <img src="https://i.imgur.com/waxVImv.png" alt="Oryx Video-ChatGPT">
+    <img src="" alt="Oryx Video-ChatGPT">
 </p>
 
 [![paper](https://img.shields.io/badge/arXiv-Paper-<COLOR>.svg)](https://arxiv.org/abs/2409.13401)
@@ -164,4 +164,4 @@ If you find this project useful in your research, please consider starring ⭐ a
 
 Place Whu train and val folder in whu folder
 
-for hrsid only sacve images
+for hrsid only sacve images -->
