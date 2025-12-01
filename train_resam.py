@@ -235,7 +235,7 @@ def process_forward(img_tensor, prompt, model):
     entropy_norm = entropy / (max_ent + eps)
 
 
-    return entropy_norm, P_norm
+    return entropy_norm, pred_ins
         
         
         
@@ -404,9 +404,9 @@ def train_sam(
 
                 batch_size = images_weak.size(0)
 
-                entropy_maps, pred_stack = process_forward(images_weak, prompts, model)
+                entropy_maps, preds = process_forward(images_weak, prompts, model)
                 
-                # pred_stack = torch.stack(preds, dim=0)
+                pred_stack = torch.stack(preds, dim=0)
                 # entropy_maps = torch.stack(entropy_maps, dim=0)
 
               
@@ -434,12 +434,12 @@ def train_sam(
                 bboxes = []
                 point_list = []
                 point_labels_list = []
-                for i,  pred in enumerate( pred_stack):
+                for i,  pred in enumerate( preds):
                     point_coords = prompts[0][0][i][:].unsqueeze(0)
                     point_coords_lab = prompts[0][1][i][:].unsqueeze(0)
 
-                    # pred = (pred[0]>mean_thresh)
-                    pred_w_overlap = (pred[0]) * (1 - entropy_maps[0])   #invert_overlap_map[0]
+                    pred = (pred[0]>mean_thresh)
+                    pred_w_overlap = (pred * invert_overlap_map[0] ) #* (1 - entropy_maps[0])
 
                     ys, xs = torch.where(pred_w_overlap > 0.5)
                     if len(xs) > 0 and len(ys) > 0:
