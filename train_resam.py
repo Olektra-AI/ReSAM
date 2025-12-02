@@ -216,26 +216,26 @@ def process_forward(img_tensor, prompt, model):
         if p.ndim == 2:
             p = p.unsqueeze(0)
 
-        # entropy_map = entropy_map_calculate(p)
-        # entropy = - (p * torch.log(p + eps) + (1 - p) * torch.log(1 - p + eps))
-        # max_ent = torch.log(torch.tensor(2.0, device=mask_p.device))
-        # entropy_norm = entropy / (max_ent + 1e-8)   # [0, 1]
-        # entropy_maps.append(entropy_norm)
+        entropy_map = entropy_map_calculate(p)
+        entropy = - (p * torch.log(p + eps) + (1 - p) * torch.log(1 - p + eps))
+        max_ent = torch.log(torch.tensor(2.0, device=mask_p.device))
+        entropy_norm = entropy / (max_ent + 1e-8)   # [0, 1]
+        entropy_maps.append(entropy_norm)
         pred_ins.append(p)
 
-    P = torch.stack(pred_ins, dim=0)
-    P_sum = P.sum(dim=0, keepdim=True) + eps     # (1, H, W)
-    P_norm = P / P_sum 
+    # P = torch.stack(pred_ins, dim=0)
+    # P_sum = P.sum(dim=0, keepdim=True) + eps     # (1, H, W)
+    # P_norm = P / P_sum 
 
-    # Compute entropy
-    entropy = - (P_norm * torch.log(P_norm + eps)).sum(dim=0)  # (H, W)
+    # # Compute entropy
+    # entropy = - (P_norm * torch.log(P_norm + eps)).sum(dim=0)  # (H, W)
 
-    # Normalize entropy to [0, 1]
-    max_ent = torch.log(torch.tensor(P.shape[0], device=P.device).float())
-    entropy_norm = entropy / (max_ent + eps)
+    # # Normalize entropy to [0, 1]
+    # max_ent = torch.log(torch.tensor(P.shape[0], device=P.device).float())
+    # entropy_norm = entropy / (max_ent + eps)
 
 
-    return entropy_norm, pred_ins
+    return entropy_maps, pred_ins
         
         
         
@@ -257,13 +257,13 @@ from collections import deque
 # persistent feature queue
 feature_queue = deque(maxlen=32)  # keep up to 512 previous object embeddings
 
-def similarity_loss(g,features, queue, tau=0.07):
+def similarity_loss(features, queue, tau=0.07):
     """
     features: [B, D] current batch embeddings (normalized)
     queue: deque of [D] past embeddings (detached)
     """
     if len(queue) == 0:
-        return torch.tensor(0., device=g.device)
+        return torch.tensor(0., device=features.device)
 
     # Stack all past features from queue
     with torch.no_grad():
@@ -415,7 +415,7 @@ def train_sam(
                 
                 # mean_thresh = pred_stack[pred_stack > 0.5].mean()
                 mean_thresh = 0.7
-                pred_binary = (((pred_stack)>mean_thresh) ).float()
+                # pred_binary = (((pred_stack)>mean_thresh) ).float()
                 overlap_count = pred_stack.sum(dim=0)
                 overlap_map = (overlap_count > 1).float()
                 invert_overlap_map = 1.0 - overlap_map
@@ -437,14 +437,14 @@ def train_sam(
                 bboxes = []
                 point_list = []
                 point_labels_list = []
-                for i,  pred in enumerate( preds):
+                for i,  (pred, ent) in enumerate( zip(preds, entropy_maps)):
                     point_coords = prompts[0][0][i][:].unsqueeze(0)
                     point_coords_lab = prompts[0][1][i][:].unsqueeze(0)
 
                     pred = (pred[0]>mean_thresh)
                     
               
-                    pred_w_overlap = ((pred * invert_overlap_map[0] ) * (1- 0*entropy_maps[0] )).float()  #* 
+                    pred_w_overlap = ((pred * invert_overlap_map[0] ) * (1- ent[0] )).float()  #* 
 
                     ys, xs = torch.where(pred_w_overlap > 0.5)
                     if len(xs) > 0 and len(ys) > 0:
@@ -495,7 +495,7 @@ def train_sam(
                 if len(batch_feats) > 0:
                  
                     batch_feats = F.normalize(torch.stack(batch_feats, dim=0), dim=1)
-                    loss_sim = similarity_loss(batch_feats,feature_queue, feature_queue)
+                    loss_sim = similarity_loss(feature_queue, feature_queue)
               
                     # add new features to queue (detach to avoid backprop)
                     for f in batch_feats:
