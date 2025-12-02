@@ -268,6 +268,7 @@ def similarity_loss(features, queue, tau=0.07):
     # Stack all past features from queue
     with torch.no_grad():
         past_feats = torch.stack(list(queue), dim=0)  # [Q, D]
+        features = torch.stack(list(features), dim=0)  # [Q, D]
 
     # Normalize
     features = F.normalize(features, dim=1)
