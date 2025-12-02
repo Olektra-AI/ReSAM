@@ -439,15 +439,12 @@ def train_sam(
                     point_coords = prompts[0][0][i][:].unsqueeze(0)
                     point_coords_lab = prompts[0][1][i][:].unsqueeze(0)
 
-                    mu = pred[0].mean()
-                    sigma = pred[0].std()
+                    
 
-                    taum = mu + 0.8 * sigma
-
-                    pred = (pred[0]>taum)
+                    pred = (pred[0]>mean_thresh)
                     
               
-                    pred_w_overlap = ((pred*invert_overlap_map[0] ) )#* (1- ent[0] )).float()  #* 
+                    pred_w_overlap = ((0.6*pred + 0.2*invert_overlap_map[0] + 0.2*(1-ent[0]) ) )#* (1- ent[0] )).float()  #* 
 
                     ys, xs = torch.where(pred_w_overlap > 0.5)
                     if len(xs) > 0 and len(ys) > 0:
