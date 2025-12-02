@@ -494,7 +494,7 @@ def train_sam(
                 if len(batch_feats) > 0:
                  
                     batch_feats = F.normalize(torch.stack(batch_feats, dim=0), dim=1)
-                    loss_sim = similarity_loss(batch_feats, feature_queue)
+                    loss_sim = similarity_loss(feature_queue, feature_queue)
               
                     # add new features to queue (detach to avoid backprop)
                     for f in batch_feats:
