@@ -444,26 +444,14 @@ def train_sam(
                 pred_stack = torch.stack(preds, dim=0)
                 entropy_maps = torch.stack(entropy_maps, dim=0)
 
-              
-
-                
                 # mean_thresh = pred_stack[pred_stack > 0.5].mean()
-                mean_thresh = 0.7
-                pred_binary = (((pred_stack) ) > 0.7).float()
+                # mean_thresh = 0.7
+                # pred_binary = (((pred_stack) ) > 0.7).float()
+                pred_binary = (entropy_maps < 0.2).float()
                 overlap_count = pred_binary.sum(dim=0)
                 overlap_map = (overlap_count > 1).float()
                 invert_overlap_map = 1.0 - overlap_map
 
-
-                # # inside your loop:
-                # total_foreground = (pred_binary > 0).float().sum()
-                # overlap_pixels = overlap_map.sum()
-                # overlap_ratio = overlap_pixels / (total_foreground + 1e-8)
-                # overlap_ratios.append(overlap_ratio.item())  # store scalar value
-
-                # # after loop ends:
-                # mean_overlap = sum(overlap_ratios) / len(overlap_ratios)
-                # print(f"Mean overlap ratio: {mean_overlap:.4f}")
 
 
                 bboxes = []
@@ -473,11 +461,6 @@ def train_sam(
                     point_coords = prompts[0][0][i][:].unsqueeze(0)
                     point_coords_lab = prompts[0][1][i][:].unsqueeze(0)
 
-                    
-
-                    # pred = (pred[0]>mean_thresh)
-                    
-              
                     pred_w_overlap = ((pred[0]*invert_overlap_map[0]  ) )#    * ((1 - 0.1 * ent[0]))
                     ys, xs = torch.where(pred_w_overlap > 0.5)
                     if len(xs) > 0 and len(ys) > 0:
@@ -568,7 +551,7 @@ def train_sam(
                 loss_sim  = loss_sim
              
 
-                loss_total =  (20 * loss_focal +  loss_dice  + loss_iou + 0.1*loss_sim)#      )#+    +0.1*loss_sim
+                loss_total =  (20 * loss_focal +  loss_dice  + loss_iou )#      )#+    +0.1*loss_sim
                 if watcher.is_outlier(loss_total):
                     continue
                 fabric.backward(loss_total)
