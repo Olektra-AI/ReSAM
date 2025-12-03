@@ -531,7 +531,7 @@ def train_sam(
                     loss_sim = similarity_loss(feature_queue , feature_queue)
 
                     if loss_sim == -1:
-                        loss_sim = torch.tensor(0., device=features.device)
+                        loss_sim = torch.tensor(0., device=batch_feats.device)
               
                     # add new features to queue (detach to avoid backprop)
                     for f in batch_feats:
