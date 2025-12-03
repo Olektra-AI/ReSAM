@@ -255,36 +255,70 @@ import torch.nn.functional as F
 from collections import deque
 
 # persistent feature queue
-feature_queue = deque(maxlen=512)  # keep up to 512 previous object embeddings
+feature_queue = deque(maxlen=32)  # keep up to 512 previous object embeddings
 
-def similarity_loss(g,features, queue, tau=0.07):
+# def similarity_loss(g,features, queue, tau=0.07):
+#     """
+#     features: [B, D] current batch embeddings (normalized)
+#     queue: deque of [D] past embeddings (detached)
+#     """
+#     if len(queue) == 0:
+#         return torch.tensor(0., device=g.device)
+
+#     # Stack all past features from queue
+#     with torch.no_grad():
+#         past_feats = torch.stack(list(queue), dim=0)  # [Q, D]
+#         features = torch.stack(list(features), dim=0)  # [Q, D]
+
+#     # Normalize
+#     features = F.normalize(features, dim=1)
+#     past_feats = F.normalize(past_feats, dim=1)
+
+#     # Compute cosine similarities (batch x queue)
+#     logits = torch.mm(features, past_feats.t()) / tau  # [B, Q]
+#     probs = F.softmax(logits, dim=1)
+
+#     # Weighted alignment (like SSAL)
+#     cos = (logits * tau).clamp(-1, 1)  # revert scaling, approximate cos
+#     loss = ((1 - cos) * probs).sum(dim=1).mean()
+
+#     return loss
+
+def similarity_loss(features, queue, tau=0.07, sim_threshold=0.5):
     """
     features: [B, D] current batch embeddings (normalized)
     queue: deque of [D] past embeddings (detached)
+    tau: temperature for softmax
+    sim_threshold: cosine similarity threshold to consider "similar"
     """
     if len(queue) == 0:
-        return torch.tensor(0., device=g.device)
+        return -1
 
-    # Stack all past features from queue
-    with torch.no_grad():
-        past_feats = torch.stack(list(queue), dim=0)  # [Q, D]
-        features = torch.stack(list(features), dim=0)  # [Q, D]
+    # Stack past features from queue
+    past_feats = torch.stack(list(queue), dim=0)  # [Q, D]
+    features = torch.stack(list(features), dim=0)  # [B, D]
 
-    # Normalize
+    # Normalize embeddings
     features = F.normalize(features, dim=1)
     past_feats = F.normalize(past_feats, dim=1)
 
-    # Compute cosine similarities (batch x queue)
-    logits = torch.mm(features, past_feats.t()) / tau  # [B, Q]
+    # Compute cosine similarities
+    cos_sim = torch.mm(features, past_feats.t())  # [B, Q]
+
+    # Apply threshold: set values below threshold to 0
+    mask = (cos_sim >= sim_threshold).float()
+    cos_sim_masked = cos_sim * mask  # [B, Q], below threshold becomes 0
+
+    # Scale by temperature
+    logits = cos_sim_masked / tau
+
+    # Softmax over queue dimension
     probs = F.softmax(logits, dim=1)
 
-    # Weighted alignment (like SSAL)
-    cos = (logits * tau).clamp(-1, 1)  # revert scaling, approximate cos
-    loss = ((1 - cos) * probs).sum(dim=1).mean()
+    # Weighted alignment loss
+    loss = ((1 - cos_sim_masked) * probs).sum(dim=1).mean()
 
     return loss
-
-
         
 def entropy_map_calculate(p):
     entropy_map = - (p * torch.log(p) + (1 - p) * torch.log(1 - p))
@@ -494,7 +528,10 @@ def train_sam(
                 if len(batch_feats) > 0:
                  
                     batch_feats = F.normalize(torch.stack(batch_feats, dim=0), dim=1)
-                    loss_sim = similarity_loss(batch_feats,feature_queue , feature_queue)
+                    loss_sim = similarity_loss(feature_queue , feature_queue)
+
+                    if loss_sim == -1:
+                        loss_sim = torch.tensor(0., device=features.device)
               
                     # add new features to queue (detach to avoid backprop)
                     for f in batch_feats:
