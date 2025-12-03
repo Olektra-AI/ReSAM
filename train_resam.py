@@ -218,9 +218,9 @@ def process_forward(img_tensor, prompt, model):
 
         entropy_map = entropy_map_calculate(p)
         entropy = - (p * torch.log(p + eps) + (1 - p) * torch.log(1 - p + eps))
-        max_ent = torch.log(torch.tensor(2.0, device=mask_p.device))
-        entropy_norm = entropy / (max_ent + 1e-8)   # [0, 1]
-        entropy_maps.append(entropy_norm)
+        # max_ent = torch.log(torch.tensor(2.0, device=mask_p.device))
+        # entropy_norm = entropy / (max_ent + 1e-8)   # [0, 1]
+        entropy_maps.append(entropy)
         pred_ins.append(p)
 
     # P = torch.stack(pred_ins, dim=0)
@@ -447,7 +447,7 @@ def train_sam(
                 # mean_thresh = pred_stack[pred_stack > 0.5].mean()
                 # mean_thresh = 0.7
                 # pred_binary = (((pred_stack) ) > 0.7).float()
-                pred_binary = ((entropy_maps < 0.8) & (pred_stack > 0.5) ).float()
+                pred_binary = ((entropy_maps < 0.5) & (pred_stack > 0.5) ).float()
                 overlap_count = pred_binary.sum(dim=0)
                 overlap_map = (overlap_count > 1).float()
                 invert_overlap_map = 1.0 - overlap_map
