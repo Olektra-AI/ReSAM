@@ -218,21 +218,11 @@ def process_forward(img_tensor, prompt, model):
 
         entropy_map = entropy_map_calculate(p)
         entropy = - (p * torch.log(p + eps) + (1 - p) * torch.log(1 - p + eps))
-        # max_ent = torch.log(torch.tensor(2.0, device=mask_p.device))
-        # entropy_norm = entropy / (max_ent + 1e-8)   # [0, 1]
+        max_ent = torch.log(torch.tensor(2.0, device=mask_p.device))
+        entropy_norm = entropy / (max_ent + 1e-8)   # [0, 1]
         entropy_maps.append(entropy)
         pred_ins.append(p)
 
-    # P = torch.stack(pred_ins, dim=0)
-    # P_sum = P.sum(dim=0, keepdim=True) + eps     # (1, H, W)
-    # P_norm = P / P_sum 
-
-    # # Compute entropy
-    # entropy = - (P_norm * torch.log(P_norm + eps)).sum(dim=0)  # (H, W)
-
-    # # Normalize entropy to [0, 1]
-    # max_ent = torch.log(torch.tensor(P.shape[0], device=P.device).float())
-    # entropy_norm = entropy / (max_ent + eps)
 
 
     return entropy_maps, pred_ins
