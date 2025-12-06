@@ -2,7 +2,7 @@
     
 # ReSAM: Refine, Requery, and Reinforce: Self-Prompting Point-Supervised Segmentation for Remote Sensing Images
 <p align="center">
-    <img src="" alt="Oryx Video-ChatGPT">
+    <img src="https://i.imgur.com/waxVImv.png" alt="Oryx Video-ChatGPT">
 </p>
 
 [![paper](https://img.shields.io/badge/arXiv-Paper-<COLOR>.svg)](https://arxiv.org/abs/2511.21606)
@@ -19,7 +19,6 @@
 ## 🖌️ Overview
 
 ![PDF Page](assets/method.png)
->>>>>>> master_v2
 
 ## 🎮 Getting Started
 ### 1.Install Environment
