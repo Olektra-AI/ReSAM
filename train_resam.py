@@ -183,6 +183,27 @@ def create_entropy_mask(entropy_maps, threshold=0.5, device='cuda'):
     return entropy_masks
 
 
+# def process_forward(img_tensor, prompt, model):
+#     with torch.no_grad():
+#         _, masks_pred, _, _ = model(img_tensor, prompt)
+#     entropy_maps = []
+#     pred_ins = []
+#     eps=1e-8
+#     for i, mask_p in enumerate( masks_pred[0]):
+#         mask_p = torch.sigmoid(mask_p)
+#         p = mask_p.clamp(1e-6, 1 - 1e-6)
+#         if p.ndim == 2:
+#             p = p.unsqueeze(0)
+
+#         # entropy_map = entropy_map_calculate(p)
+#         entropy = - (p * torch.log(p + eps) + (1 - p) * torch.log(1 - p + eps))
+#         max_ent = torch.log(torch.tensor(2.0, device=mask_p.device))
+#         entropy_norm = entropy / (max_ent + 1e-8)   # [0, 1]
+#         entropy_maps.append(entropy_norm)
+#         pred_ins.append(p)
+
+#     return entropy_maps, pred_ins
+
 def process_forward(img_tensor, prompt, model):
     with torch.no_grad():
         _, masks_pred, _, _ = model(img_tensor, prompt)
@@ -195,14 +216,17 @@ def process_forward(img_tensor, prompt, model):
         if p.ndim == 2:
             p = p.unsqueeze(0)
 
-        # entropy_map = entropy_map_calculate(p)
+        entropy_map = entropy_map_calculate(p)
         entropy = - (p * torch.log(p + eps) + (1 - p) * torch.log(1 - p + eps))
         max_ent = torch.log(torch.tensor(2.0, device=mask_p.device))
         entropy_norm = entropy / (max_ent + 1e-8)   # [0, 1]
-        entropy_maps.append(entropy_norm)
+        entropy_maps.append(entropy)
         pred_ins.append(p)
 
+
+
     return entropy_maps, pred_ins
+        
         
         
         
@@ -223,33 +247,68 @@ from collections import deque
 # persistent feature queue
 feature_queue = deque(maxlen=32)  # keep up to 512 previous object embeddings
 
-def similarity_loss(features, queue, tau=0.07):
+# def similarity_loss(g,features, queue, tau=0.07):
+#     """
+#     features: [B, D] current batch embeddings (normalized)
+#     queue: deque of [D] past embeddings (detached)
+#     """
+#     if len(queue) == 0:
+#         return torch.tensor(0., device=g.device)
+
+#     # Stack all past features from queue
+#     with torch.no_grad():
+#         past_feats = torch.stack(list(queue), dim=0)  # [Q, D]
+#         features = torch.stack(list(features), dim=0)  # [Q, D]
+
+#     # Normalize
+#     features = F.normalize(features, dim=1)
+#     past_feats = F.normalize(past_feats, dim=1)
+
+#     # Compute cosine similarities (batch x queue)
+#     logits = torch.mm(features, past_feats.t()) / tau  # [B, Q]
+#     probs = F.softmax(logits, dim=1)
+
+#     # Weighted alignment (like SSAL)
+#     cos = (logits * tau).clamp(-1, 1)  # revert scaling, approximate cos
+#     loss = ((1 - cos) * probs).sum(dim=1).mean()
+
+#     return loss
+
+def similarity_loss(features, queue, tau=0.07, sim_threshold=0.5):
     """
     features: [B, D] current batch embeddings (normalized)
     queue: deque of [D] past embeddings (detached)
+    tau: temperature for softmax
+    sim_threshold: cosine similarity threshold to consider "similar"
     """
     if len(queue) == 0:
-        return torch.tensor(0., device=features.device)
+        return -1
 
-    # Stack all past features from queue
-    with torch.no_grad():
-        past_feats = torch.stack(list(queue), dim=0)  # [Q, D]
+    # Stack past features from queue
+    past_feats = torch.stack(list(queue), dim=0)  # [Q, D]
+    features = torch.stack(list(features), dim=0)  # [B, D]
 
-    # Normalize
+    # Normalize embeddings
     features = F.normalize(features, dim=1)
     past_feats = F.normalize(past_feats, dim=1)
 
-    # Compute cosine similarities (batch x queue)
-    logits = torch.mm(features, past_feats.t()) / tau  # [B, Q]
+    # Compute cosine similarities
+    cos_sim = torch.mm(features, past_feats.t())  # [B, Q]
+
+    # Apply threshold: set values below threshold to 0
+    mask = (cos_sim >= sim_threshold).float()
+    cos_sim_masked = cos_sim * mask  # [B, Q], below threshold becomes 0
+
+    # Scale by temperature
+    logits = cos_sim_masked / tau
+
+    # Softmax over queue dimension
     probs = F.softmax(logits, dim=1)
 
-    # Weighted alignment (like SSAL)
-    cos = (logits * tau).clamp(-1, 1)  # revert scaling, approximate cos
-    loss = ((1 - cos) * probs).sum(dim=1).mean()
+    # Weighted alignment loss
+    loss = ((1 - cos_sim_masked) * probs).sum(dim=1).mean()
 
     return loss
-
-
         
 def entropy_map_calculate(p):
     entropy_map = - (p * torch.log(p) + (1 - p) * torch.log(1 - p))
@@ -370,37 +429,28 @@ def train_sam(
 
                 batch_size = images_weak.size(0)
 
-                _, preds = process_forward(images_weak, prompts, model)
+                entropy_maps, preds = process_forward(images_weak, prompts, model)
+                
                 pred_stack = torch.stack(preds, dim=0)
-                # mean_thresh = pred_stack[pred_stack > 0.5].mean()
-                mean_thresh = 0.7
-                pred_binary = (((pred_stack)>mean_thresh) ).float()
+                entropy_maps = torch.stack(entropy_maps, dim=0)
+
+                # pred_binary = ((entropy_maps < 0.5) & (pred_stack > 0.5) ).float()
+                pred_binary = (((1 - entropy_maps) * (pred_stack>0.7)) > 0.5) .float()
                 overlap_count = pred_binary.sum(dim=0)
                 overlap_map = (overlap_count > 1).float()
                 invert_overlap_map = 1.0 - overlap_map
 
-
-                # # inside your loop:
-                # total_foreground = (pred_binary > 0).float().sum()
-                # overlap_pixels = overlap_map.sum()
-                # overlap_ratio = overlap_pixels / (total_foreground + 1e-8)
-                # overlap_ratios.append(overlap_ratio.item())  # store scalar value
-
-                # # after loop ends:
-                # mean_overlap = sum(overlap_ratios) / len(overlap_ratios)
-                # print(f"Mean overlap ratio: {mean_overlap:.4f}")
+                
 
 
                 bboxes = []
                 point_list = []
                 point_labels_list = []
-                for i,  pred in enumerate( preds):
+                for i,  (pred, ent) in enumerate( zip(pred_binary, entropy_maps)):
                     point_coords = prompts[0][0][i][:].unsqueeze(0)
                     point_coords_lab = prompts[0][1][i][:].unsqueeze(0)
 
-                    pred = (pred[0]>mean_thresh)
-                    pred_w_overlap = pred * invert_overlap_map[0]
-
+                    pred_w_overlap = ((pred[0]*invert_overlap_map[0]  ) )#    * ((1 - 0.1 * ent[0]))
                     ys, xs = torch.where(pred_w_overlap > 0.5)
                     if len(xs) > 0 and len(ys) > 0:
                         x_min, x_max = xs.min().item(), xs.max().item()
@@ -450,7 +500,10 @@ def train_sam(
                 if len(batch_feats) > 0:
                  
                     batch_feats = F.normalize(torch.stack(batch_feats, dim=0), dim=1)
-                    loss_sim = similarity_loss(batch_feats, feature_queue)
+                    loss_sim = similarity_loss(feature_queue , feature_queue)
+
+                    if loss_sim == -1:
+                        loss_sim = torch.tensor(0., device=batch_feats.device)
               
                     # add new features to queue (detach to avoid backprop)
                     for f in batch_feats:
@@ -479,7 +532,7 @@ def train_sam(
                         loss_iou += F.mse_loss(iou_prediction.view(-1), batch_iou.view(-1), reduction='sum') / num_masks
 
                 del  pred_masks, iou_predictions 
-                del pred_stack, pred_binary, overlap_map, invert_overlap_map
+                del pred_stack, overlap_map, invert_overlap_map
                 torch.cuda.empty_cache()
                 # loss_dist = loss_dist / num_masks
                 loss_dice = loss_dice / num_masks
@@ -487,7 +540,7 @@ def train_sam(
                 loss_sim  = loss_sim
              
 
-                loss_total =  (20 * loss_focal +  loss_dice  + loss_iou + 0.1*loss_sim     )#+ 
+                loss_total =  (20 * loss_focal +  loss_dice  + loss_iou +0.1*loss_sim )#      )#+    
                 if watcher.is_outlier(loss_total):
                     continue
                 fabric.backward(loss_total)

@@ -4,7 +4,7 @@ from configs.base_config import base_config
 config = {
     "dataset": "NWPU", 
     "load_type": "soft",
-    "num_points": 1,
+    "num_points":1,
     
     "batch_size": 1, #only support 1
     "val_batchsize": 1,
